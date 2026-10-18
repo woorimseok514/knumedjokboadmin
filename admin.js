@@ -701,6 +701,96 @@ async function openAdminAnswerKeyModal(examId) {
   if (modal) modal.classList.remove('hidden');
 }
 
+
+// ------------------- 복수 정답 및 선지 다중 선택 공통 유틸리티 -------------------
+
+const CIRCLE_SYMBOLS_LIST = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩'];
+
+const CIRCLE_TO_NUM_MAP = {
+  '①': '1', '②': '2', '③': '3', '④': '4', '⑤': '5',
+  '⑥': '6', '⑦': '7', '⑧': '8', '⑨': '9', '⑩': '10',
+  '⑴': '1', '⑵': '2', '⑶': '3', '⑷': '4', '⑸': '5'
+};
+
+const NUM_TO_CIRCLE_MAP = {
+  '1': '①', '2': '②', '3': '③', '4': '④', '5': '⑤',
+  '6': '⑥', '7': '⑦', '⑧': '⑧', '⑨': '⑨', '10': '⑩'
+};
+
+function normalizeToCircle(token) {
+  if (!token) return '';
+  const t = String(token).trim();
+  if (CIRCLE_TO_NUM_MAP[t]) return t;
+  if (NUM_TO_CIRCLE_MAP[t]) return NUM_TO_CIRCLE_MAP[t];
+  const m = t.match(/\d+/);
+  if (m && NUM_TO_CIRCLE_MAP[m[0]]) return NUM_TO_CIRCLE_MAP[m[0]];
+  return t;
+}
+
+function parseChoiceTokens(str) {
+  if (!str) return [];
+  const s = String(str).trim();
+  if (!s) return [];
+  const rawParts = s.split(/[,/·\s]+/).map(p => p.trim()).filter(Boolean);
+  const result = [];
+  rawParts.forEach(p => {
+    const circles = p.match(/[①-⑩]|\(\d+\)|\d+/g);
+    if (circles && circles.length > 0) {
+      circles.forEach(c => {
+        const norm = normalizeToCircle(c);
+        if (norm && !result.includes(norm)) result.push(norm);
+      });
+    } else {
+      const norm = normalizeToCircle(p);
+      if (norm && !result.includes(norm)) result.push(norm);
+    }
+  });
+  return result;
+}
+
+function sortChoiceTokens(tokens) {
+  if (!Array.isArray(tokens)) return [];
+  return tokens.slice().sort((a, b) => {
+    const numA = parseInt(CIRCLE_TO_NUM_MAP[a] || (a.match(/\d+/) ? a.match(/\d+/)[0] : '99'), 10);
+    const numB = parseInt(CIRCLE_TO_NUM_MAP[b] || (b.match(/\d+/) ? b.match(/\d+/)[0] : '99'), 10);
+    return numA - numB;
+  });
+}
+
+function isMultiChoiceQuestion(q, exam) {
+  if (!q) return false;
+  const qNum = String(q.q_number || '');
+  const keys = (exam && exam.answer_keys) ? exam.answer_keys : {};
+  const key = keys[qNum] || q.answer || '';
+  if (parseChoiceTokens(key).length > 1) return true;
+  const stem = q.stem || '';
+  if (/(?:2|3|4|두|세|네)\s*개|모두\s*(?:고르|선택)|복수\s*(?:정답|선택)|정답\s*(?:2|두)/i.test(stem)) return true;
+  return false;
+}
+
+let questionMultiModeOverrides = {};
+
+function isQuestionMultiMode(q, exam) {
+  if (!q) return false;
+  const qNum = String(q.q_number || '');
+  if (questionMultiModeOverrides[qNum] !== undefined) {
+    return questionMultiModeOverrides[qNum];
+  }
+  if (isMultiChoiceQuestion(q, exam)) return true;
+  const cur = userAnswers[qNum] || '';
+  if (parseChoiceTokens(cur).length > 1) return true;
+  return false;
+}
+
+function toggleQuestionMultiMode(qNum) {
+  if (!currentExamForSolving) return;
+  const qList = currentExamForSolving.questions || [];
+  const q = qList[currentQuestionIndex];
+  const curMode = isQuestionMultiMode(q, currentExamForSolving);
+  questionMultiModeOverrides[String(qNum)] = !curMode;
+  renderCurrentQuestion();
+}
+
 function renderAdminAnswerKeyList() {
   const container = document.getElementById('adminAkQuestionsList');
   if (!container || !currentEditingAdminExam) return;
@@ -726,7 +816,8 @@ function renderAdminAnswerKeyList() {
     for (let cIdx = 1; cIdx <= count; cIdx++) {
       const optStr = String(cIdx);
       const optCircle = circleSymbols[cIdx - 1] || `(${cIdx})`;
-      const isSelected = String(currentVal) === optStr || String(currentVal) === optCircle;
+      const currentTokens = parseChoiceTokens(currentVal);
+      const isSelected = currentTokens.includes(optCircle) || currentTokens.includes(optStr);
       const activeClass = isSelected
         ? 'bg-indigo-600 text-white font-bold ring-2 ring-indigo-400 shadow-sm'
         : 'bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-700';
@@ -895,10 +986,21 @@ function toggleSubjectiveMode(qNum) {
 }
 
 function quickSetAdminAnswerKey(qNum, opt) {
-  if (String(adminEditingAnswerMap[qNum]) === String(opt)) {
-    delete adminEditingAnswerMap[qNum];
+  const normOpt = normalizeToCircle(opt);
+  let cur = (adminEditingAnswerMap[qNum] || '').trim();
+  let tokens = parseChoiceTokens(cur);
+
+  if (tokens.includes(normOpt)) {
+    tokens = tokens.filter(t => t !== normOpt);
   } else {
-    adminEditingAnswerMap[qNum] = String(opt);
+    tokens.push(normOpt);
+  }
+
+  tokens = sortChoiceTokens(tokens);
+  if (tokens.length > 0) {
+    adminEditingAnswerMap[qNum] = tokens.join(', ');
+  } else {
+    delete adminEditingAnswerMap[qNum];
   }
   renderAdminAnswerKeyList();
 }
