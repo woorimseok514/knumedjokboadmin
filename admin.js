@@ -561,3 +561,230 @@ function escapeHtml(str) {
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
 }
+
+
+
+// ------------------- 관리자 정답표 관리 기능 -------------------
+let adminLoadedExams = [];
+let currentEditingAdminExam = null;
+let currentEditingAdminExamId = null;
+let adminEditingAnswerMap = {};
+
+function cleanQuestionStem(text) {
+  if (!text) return '';
+  let cleaned = String(text);
+  cleaned = cleaned.replace(/\(\s*[1-5](?:\s*,\s*[1-5])*\s*\)([\.\s]*)$/, ' ( ) $1');
+  cleaned = cleaned.replace(/([\?\.\)])\s*([1-5](?:\s*,\s*[1-5])*)\s*$/, '$1');
+  cleaned = cleaned.replace(/\s+([1-5](?:\s*,\s*[1-5])*)\s*$/, '');
+  return cleaned.trim();
+}
+
+async function openAdminAnswerKeyModal(examId) {
+  currentEditingAdminExamId = examId;
+  let exam = (adminLoadedExams || []).find(e => e.id === examId);
+
+  if (!exam) {
+    try {
+      const all = await fetchJsonWithFallback('/api/exams', './data/exams.json');
+      if (Array.isArray(all)) {
+        adminLoadedExams = all;
+        exam = all.find(e => e.id === examId) || all[0];
+      }
+    } catch (e) {}
+  }
+
+  if (!exam) {
+    alert('족보 세트 정보를 불러올 수 없습니다.');
+    return;
+  }
+
+  currentEditingAdminExam = exam;
+
+  // 로컬스토리지에 저장된 정답표가 있다면 우선 반영
+  const savedLocal = localStorage.getItem(`custom_answer_keys_${examId}`);
+  let mergedKeys = { ...(exam.answer_keys || {}) };
+  if (savedLocal) {
+    try {
+      mergedKeys = { ...mergedKeys, ...JSON.parse(savedLocal) };
+    } catch (e) {}
+  }
+
+  adminEditingAnswerMap = { ...mergedKeys };
+
+  // 각 문항의 answer 속성도 백업으로 반영
+  (exam.questions || []).forEach((q, idx) => {
+    const qNum = String(q.q_number || (idx + 1));
+    if (!adminEditingAnswerMap[qNum] && q.answer) {
+      adminEditingAnswerMap[qNum] = String(q.answer);
+    }
+  });
+
+  const titleEl = document.getElementById('adminAkModalTitle');
+  if (titleEl) {
+    titleEl.textContent = `[${exam.title || '족보'}] 정답표 수정`;
+  }
+
+  renderAdminAnswerKeyList();
+
+  const modal = document.getElementById('adminAnswerKeyModal');
+  if (modal) modal.classList.remove('hidden');
+}
+
+function renderAdminAnswerKeyList() {
+  const container = document.getElementById('adminAkQuestionsList');
+  if (!container || !currentEditingAdminExam) return;
+
+  const questions = currentEditingAdminExam.questions || [];
+  if (questions.length === 0) {
+    container.innerHTML = '<div class="text-center text-slate-500 py-8 text-sm">등록된 문항이 없습니다.</div>';
+    return;
+  }
+
+  container.innerHTML = questions.map((q, idx) => {
+    const qNum = String(q.q_number || (idx + 1));
+    const currentVal = adminEditingAnswerMap[qNum] || '';
+    const stemSnippet = cleanQuestionStem(q.stem || `문항 ${qNum}`);
+    const shortStem = stemSnippet.length > 75 ? stemSnippet.slice(0, 75) + '...' : stemSnippet;
+
+    const optButtons = [1, 2, 3, 4, 5].map(opt => {
+      const isSelected = String(currentVal) === String(opt);
+      const activeClass = isSelected
+        ? 'bg-indigo-600 text-white font-bold ring-2 ring-indigo-400'
+        : 'bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-700';
+      return `<button type="button" onclick="quickSetAdminAnswerKey('${qNum}', '${opt}')" class="w-8 h-8 rounded-lg text-xs font-semibold transition ${activeClass}">${opt}</button>`;
+    }).join(' ');
+
+    return `
+      <div class="p-4 bg-slate-800/60 rounded-2xl border border-slate-700/80 space-y-3 hover:border-slate-600 transition">
+        <div class="flex items-start justify-between gap-3">
+          <div class="flex items-start gap-2.5 flex-1">
+            <span class="w-6 h-6 rounded-lg bg-indigo-500/20 text-indigo-400 font-bold flex items-center justify-center text-xs shrink-0 mt-0.5 border border-indigo-500/30">
+              ${qNum}
+            </span>
+            <div class="text-xs text-slate-300 leading-relaxed font-medium">
+              ${escapeHtml(shortStem)}
+            </div>
+          </div>
+          <span class="px-2 py-0.5 rounded text-[10px] font-bold ${currentVal ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'}">
+            ${currentVal ? '정답 ' + escapeHtml(currentVal) : '미지정'}
+          </span>
+        </div>
+
+        <div class="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-700/60">
+          <div class="flex items-center gap-1.5">
+            <span class="text-[11px] text-slate-400 font-medium mr-1">객관식 원클릭:</span>
+            ${optButtons}
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="text-[11px] text-slate-400 font-medium">직접 입력:</span>
+            <input type="text" 
+                   value="${escapeHtml(currentVal)}" 
+                   placeholder="예: 3 또는 4,5"
+                   oninput="updateAdminAnswerKeyText('${qNum}', this.value)"
+                   class="w-28 px-2.5 py-1 text-xs bg-slate-900 border border-slate-600 rounded-lg text-white font-bold text-center focus:outline-none focus:border-indigo-500 transition" />
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function quickSetAdminAnswerKey(qNum, opt) {
+  if (String(adminEditingAnswerMap[qNum]) === String(opt)) {
+    delete adminEditingAnswerMap[qNum];
+  } else {
+    adminEditingAnswerMap[qNum] = String(opt);
+  }
+  renderAdminAnswerKeyList();
+}
+
+function updateAdminAnswerKeyText(qNum, val) {
+  const trimmed = val.trim();
+  if (trimmed) {
+    adminEditingAnswerMap[qNum] = trimmed;
+  } else {
+    delete adminEditingAnswerMap[qNum];
+  }
+}
+
+function closeAdminAnswerKeyModal() {
+  const modal = document.getElementById('adminAnswerKeyModal');
+  if (modal) modal.classList.add('hidden');
+}
+
+async function saveAdminAnswerKey() {
+  if (!currentEditingAdminExam || !currentEditingAdminExamId) {
+    alert('선택된 족보 세트가 없습니다.');
+    return;
+  }
+
+  // 1. 객체 내 answer_keys 업데이트
+  currentEditingAdminExam.answer_keys = { ...adminEditingAnswerMap };
+
+  // 각 질문의 answer 속성도 업데이트
+  if (Array.isArray(currentEditingAdminExam.questions)) {
+    currentEditingAdminExam.questions.forEach((q, idx) => {
+      const qNum = String(q.q_number || (idx + 1));
+      if (adminEditingAnswerMap[qNum]) {
+        q.answer = adminEditingAnswerMap[qNum];
+      }
+    });
+  }
+
+  // 2. localStorage에 영구 보존
+  localStorage.setItem(`custom_answer_keys_${currentEditingAdminExamId}`, JSON.stringify(adminEditingAnswerMap));
+
+  // 3. 전체 adminLoadedExams 캐시 저장
+  try {
+    localStorage.setItem('cached_exams_json', JSON.stringify(adminLoadedExams));
+  } catch (e) {}
+
+  // 4. Supabase DB 연결되어 있을 경우 동기화 시도
+  if (typeof supabaseClient !== 'undefined' && supabaseClient) {
+    try {
+      await supabaseClient.from('exam_answer_keys').upsert({
+        exam_id: currentEditingAdminExamId,
+        keys: adminEditingAnswerMap,
+        updated_at: new Date().toISOString()
+      });
+    } catch (e) {
+      console.warn('Supabase answer key sync skipped:', e);
+    }
+  }
+
+  alert(`[${currentEditingAdminExam.title || '족보'}] 정답표가 브라우저에 저장되었습니다!\n\n학생용 사이트에도 영구 배포하려면 모달 좌측 하단의 [수정된 exams.json 다운로드]를 눌러 리포지터리의 data/exams.json에 커밋하세요.`);
+
+  closeAdminAnswerKeyModal();
+  loadSubjects();
+}
+
+function downloadCleanedExamsJson() {
+  if (!adminLoadedExams || adminLoadedExams.length === 0) {
+    alert('다운로드할 족보 데이터가 없습니다.');
+    return;
+  }
+
+  // 현재 편집 중인 사항 반영 확인
+  if (currentEditingAdminExam && currentEditingAdminExamId) {
+    currentEditingAdminExam.answer_keys = { ...adminEditingAnswerMap };
+    if (Array.isArray(currentEditingAdminExam.questions)) {
+      currentEditingAdminExam.questions.forEach((q, idx) => {
+        const qNum = String(q.q_number || (idx + 1));
+        if (adminEditingAnswerMap[qNum]) {
+          q.answer = adminEditingAnswerMap[qNum];
+        }
+      });
+    }
+  }
+
+  const jsonStr = JSON.stringify(adminLoadedExams, null, 2);
+  const blob = new Blob([jsonStr], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'exams.json';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
