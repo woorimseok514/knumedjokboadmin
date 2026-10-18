@@ -1007,8 +1007,7 @@ function downloadCleanedExamsJson() {
 // ------------------- 관리자 자료/족보 삭제 기능 -------------------
 
 async function deleteAdminLecture(docId) {
-  if (!confirm('정말로 이 강의 자료를 삭제하시겠습니까?
-삭제 시 이용자 포털 및 전체 학생 화면에서도 즉시 제외됩니다.')) return;
+  if (!confirm('정말로 이 강의 자료를 삭제하시겠습니까?\n삭제 시 이용자 포털 및 전체 학생 화면에서도 즉시 제외됩니다.')) return;
 
   // UI 즉시 반응 (해당 행 즉시 반투명/제거)
   try {
@@ -1046,7 +1045,7 @@ async function deleteAdminLecture(docId) {
 
   // 3. 백엔드 API 호출 시도 (로컬 서버 환경, 실패해도 무시)
   try {
-    await fetch(/api/lectures/, { method: 'DELETE', headers: getAdminHeaders() });
+    await fetch(`/api/lectures/${docId}`, { method: 'DELETE', headers: getAdminHeaders() });
   } catch (e) {}
 
   alert('강의 자료가 성공적으로 삭제되었습니다.');
@@ -1054,8 +1053,7 @@ async function deleteAdminLecture(docId) {
 }
 
 async function deleteAdminExam(examId) {
-  if (!confirm('정말로 이 족보 문항 세트를 삭제하시겠습니까?
-삭제 시 이용자 포털 및 문제은행에서도 즉시 제외됩니다.')) return;
+  if (!confirm('정말로 이 족보 문항 세트를 삭제하시겠습니까?\n삭제 시 이용자 포털 및 문제은행에서도 즉시 제외됩니다.')) return;
 
   // UI 즉시 반응
   try {
@@ -1093,7 +1091,7 @@ async function deleteAdminExam(examId) {
 
   // 3. 백엔드 API 호출 시도 (로컬 서버 환경, 실패해도 무시)
   try {
-    await fetch(/api/exams/, { method: 'DELETE', headers: getAdminHeaders() });
+    await fetch(`/api/exams/${examId}`, { method: 'DELETE', headers: getAdminHeaders() });
   } catch (e) {}
 
   alert('족보 문항 세트가 성공적으로 삭제되었습니다.');
