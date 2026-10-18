@@ -64,8 +64,14 @@ async function checkAdminAuth() {
 
 function showAdminLoginModal(show) {
   const modal = document.getElementById('adminLoginModal');
-  if (show) modal.classList.remove('hidden');
-  else modal.classList.add('hidden');
+  if (!modal) return;
+  if (show) {
+    modal.classList.remove('hidden');
+    modal.style.display = 'flex';
+  } else {
+    modal.classList.add('hidden');
+    modal.style.display = 'none';
+  }
 }
 
 function initAdminLoginForm() {
@@ -157,9 +163,9 @@ function switchAdminTab(tabName) {
 // ------------------- 대시보드 데이터 로드 -------------------
 
 async function refreshAdminDashboard() {
-  await loadStats();
-  await loadUsers();
-  await loadSubjects();
+  try { await loadStats(); } catch (e) { console.warn('loadStats warning:', e); }
+  try { await loadUsers(); } catch (e) { console.warn('loadUsers warning:', e); }
+  try { await loadSubjects(); } catch (e) { console.warn('loadSubjects warning:', e); }
 }
 
 async function loadStats() {
