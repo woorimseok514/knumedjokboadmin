@@ -400,8 +400,36 @@ async function deleteUser(userId) {
 async function loadSubjects() {
   try {
     let subs = await fetchJsonWithFallback('/api/subjects', './data/subjects.json');
-    let docs = await fetchJsonWithFallback('/api/lectures', './data/lectures.json') || [];
-    let exams = await fetchJsonWithFallback('/api/exams', './data/exams.json') || [];
+    let staticDocs = await fetchJsonWithFallback('/api/lectures', './data/lectures.json') || [];
+    let staticExams = await fetchJsonWithFallback('/api/exams', './data/exams.json') || [];
+
+    // Supabase shared_lectures & shared_exams 실시간 조회
+    let cloudDocs = [];
+    let cloudExams = [];
+    if (typeof supabaseClient !== 'undefined' && supabaseClient) {
+      try {
+        const { data: cD } = await supabaseClient.from('shared_lectures').select('*').order('uploaded_at', { ascending: false });
+        if (cD) cloudDocs = cD;
+      } catch (e) {}
+      try {
+        const { data: cE } = await supabaseClient.from('shared_exams').select('*').order('created_at', { ascending: false });
+        if (cE) cloudExams = cE;
+      } catch (e) {}
+    }
+
+    // 병합 및 삭제 필터링
+    const deletedDocs = JSON.parse(localStorage.getItem('deleted_lectures') || '[]');
+    const deletedExams = JSON.parse(localStorage.getItem('deleted_exams') || '[]');
+
+    const docMap = new Map();
+    cloudDocs.forEach(d => { if (!deletedDocs.includes(d.id)) docMap.set(d.id, d); });
+    staticDocs.forEach(d => { if (!deletedDocs.includes(d.id) && !docMap.has(d.id)) docMap.set(d.id, d); });
+    let docs = Array.from(docMap.values());
+
+    const examMap = new Map();
+    cloudExams.forEach(e => { if (!deletedExams.includes(e.id) && !e.is_deleted) examMap.set(e.id, e); });
+    staticExams.forEach(e => { if (!deletedExams.includes(e.id) && !e.is_deleted && !examMap.has(e.id)) examMap.set(e.id, e); });
+    let exams = Array.from(examMap.values());
     adminLoadedExams = exams;
 
     if (!subs || subs.length === 0) {
@@ -451,6 +479,12 @@ async function loadSubjects() {
             </td>
             <td class="px-6 py-3.5 font-semibold text-slate-300 text-xs">${d.unit_count || (d.units ? d.units.length : 0)}개</td>
             <td class="px-6 py-3.5 text-xs text-slate-400">${escapeHtml(d.uploaded_by || '관리자')} (${d.uploaded_at || '-'})</td>
+            <td class="px-6 py-3.5 text-right">
+              <button onclick="deleteAdminLecture('${d.id}')" class="px-2.5 py-1.5 bg-rose-600/80 hover:bg-rose-600 text-white rounded-lg text-xs font-semibold shadow transition inline-flex items-center gap-1.5">
+                <i class="fa-solid fa-trash-can text-[10px]"></i>
+                <span>삭제</span>
+              </button>
+            </td>
           </tr>
         `).join('');
       }
@@ -477,10 +511,14 @@ async function loadSubjects() {
               <i class="fa-solid fa-check-circle"></i> 정답표 등록 완료
             </td>
                         <td class="px-6 py-3.5 text-xs text-slate-400">${escapeHtml(e.created_by || '관리자')} (${e.created_at || '-'})</td>
-            <td class="px-6 py-3.5 text-right">
+            <td class="px-6 py-3.5 text-right space-x-1.5">
               <button onclick="openAdminAnswerKeyModal('${e.id}')" class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold shadow transition inline-flex items-center gap-1.5">
-                <i class="fa-solid fa-pen-to-square"></i>
+                <i class="fa-solid fa-pen-to-square text-[10px]"></i>
                 <span>문제 및 정답 수정</span>
+              </button>
+              <button onclick="deleteAdminExam('${e.id}')" class="px-2.5 py-1.5 bg-rose-600/80 hover:bg-rose-600 text-white rounded-lg text-xs font-semibold shadow transition inline-flex items-center gap-1.5">
+                <i class="fa-solid fa-trash-can text-[10px]"></i>
+                <span>삭제</span>
               </button>
             </td>
           </tr>
@@ -937,4 +975,69 @@ function downloadCleanedExamsJson() {
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+}
+
+// ------------------- 관리자 자료/족보 삭제 기능 -------------------
+
+async function deleteAdminLecture(docId) {
+  if (!confirm('정말로 이 강의 자료를 삭제하시겠습니까?\n삭제 시 이용자 포털에서도 즉시 조회되지 않습니다.')) return;
+
+  // 1. Supabase shared_lectures 테이블에서 삭제
+  if (typeof supabaseClient !== 'undefined' && supabaseClient) {
+    try {
+      await supabaseClient.from('shared_lectures').delete().eq('id', docId);
+    } catch (e) {
+      console.warn('Supabase lecture delete warning:', e);
+    }
+  }
+
+  // 2. 삭제 목록 로컬스토리지 보존 (정적 파일 필터링)
+  let deleted = JSON.parse(localStorage.getItem('deleted_lectures') || '[]');
+  if (!deleted.includes(docId)) deleted.push(docId);
+  localStorage.setItem('deleted_lectures', JSON.stringify(deleted));
+
+  // 3. 백엔드 API 호출 시도 (로컬 서버 환경)
+  try {
+    await fetch(`/api/lectures/${docId}`, { method: 'DELETE', headers: getAdminHeaders() });
+  } catch (e) {}
+
+  alert('강의 자료가 성공적으로 삭제되었습니다.');
+  await loadSubjects();
+}
+
+async function deleteAdminExam(examId) {
+  if (!confirm('정말로 이 족보 문항 세트를 삭제하시겠습니까?\n삭제 시 이용자 포털 및 문제은행에서도 즉시 제외됩니다.')) return;
+
+  // 1. Supabase shared_exams 테이블에서 삭제
+  if (typeof supabaseClient !== 'undefined' && supabaseClient) {
+    try {
+      await supabaseClient.from('shared_exams').delete().eq('id', examId);
+    } catch (e) {
+      console.warn('Supabase exam delete warning:', e);
+    }
+
+    // 1-2. exam_overrides에 삭제 플래그 등록 (모든 이용자 실시간 동기화)
+    try {
+      await supabaseClient.from('exam_overrides').upsert({
+        exam_id: examId,
+        subject_id: 'sub_fbdc79d0',
+        exam_data: { id: examId, is_deleted: true },
+        updated_by: '관리자 삭제',
+        updated_at: new Date().toISOString()
+      });
+    } catch (e) {}
+  }
+
+  // 2. 삭제 목록 로컬스토리지 보존
+  let deleted = JSON.parse(localStorage.getItem('deleted_exams') || '[]');
+  if (!deleted.includes(examId)) deleted.push(examId);
+  localStorage.setItem('deleted_exams', JSON.stringify(deleted));
+
+  // 3. 백엔드 API 호출 시도 (로컬 서버 환경)
+  try {
+    await fetch(`/api/exams/${examId}`, { method: 'DELETE', headers: getAdminHeaders() });
+  } catch (e) {}
+
+  alert('족보 문항 세트가 성공적으로 삭제되었습니다.');
+  await loadSubjects();
 }
