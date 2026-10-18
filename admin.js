@@ -640,19 +640,27 @@ function renderAdminAnswerKeyList() {
     return;
   }
 
+  const circleSymbols = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩'];
+
   container.innerHTML = questions.map((q, idx) => {
     const qNum = String(q.q_number || (idx + 1));
     const currentVal = adminEditingAnswerMap[qNum] || '';
     const stemSnippet = cleanQuestionStem(q.stem || `문항 ${qNum}`);
     const shortStem = stemSnippet.length > 75 ? stemSnippet.slice(0, 75) + '...' : stemSnippet;
 
-    const optButtons = [1, 2, 3, 4, 5].map(opt => {
-      const isSelected = String(currentVal) === String(opt);
+    const choicesCount = (q.choices && q.choices.length > 0) ? q.choices.length : 5;
+    const isSubjective = !q.choices || q.choices.length === 0;
+
+    let optButtons = [];
+    for (let cIdx = 1; cIdx <= choicesCount; cIdx++) {
+      const optStr = String(cIdx);
+      const optCircle = circleSymbols[cIdx - 1] || `(${cIdx})`;
+      const isSelected = String(currentVal) === optStr || String(currentVal) === optCircle;
       const activeClass = isSelected
-        ? 'bg-indigo-600 text-white font-bold ring-2 ring-indigo-400'
+        ? 'bg-indigo-600 text-white font-bold ring-2 ring-indigo-400 shadow-sm'
         : 'bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-700';
-      return `<button type="button" onclick="quickSetAdminAnswerKey('${qNum}', '${opt}')" class="w-8 h-8 rounded-lg text-xs font-semibold transition ${activeClass}">${opt}</button>`;
-    }).join(' ');
+      optButtons.push(`<button type="button" onclick="quickSetAdminAnswerKey('${qNum}', '${optStr}')" class="min-w-[30px] h-8 px-1.5 rounded-lg text-xs font-semibold transition ${activeClass}">${cIdx}</button>`);
+    }
 
     return `
       <div class="p-4 bg-slate-800/60 rounded-2xl border border-slate-700/80 space-y-3 hover:border-slate-600 transition">
@@ -671,9 +679,9 @@ function renderAdminAnswerKeyList() {
         </div>
 
         <div class="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-700/60">
-          <div class="flex items-center gap-1.5">
-            <span class="text-[11px] text-slate-400 font-medium mr-1">객관식 원클릭:</span>
-            ${optButtons}
+          <div class="flex items-center gap-1.5 flex-wrap">
+            <span class="text-[11px] text-slate-400 font-medium mr-1">${isSubjective ? '주관식 / 서술형' : `객관식 (${choicesCount}지선다):`}</span>
+            ${!isSubjective ? optButtons.join(' ') : ''}
           </div>
           <div class="flex items-center gap-2">
             <span class="text-[11px] text-slate-400 font-medium">직접 입력:</span>
