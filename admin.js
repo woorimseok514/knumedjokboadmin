@@ -480,7 +480,7 @@ async function loadSubjects() {
             <td class="px-6 py-3.5 text-right">
               <button onclick="openAdminAnswerKeyModal('${e.id}')" class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold shadow transition inline-flex items-center gap-1.5">
                 <i class="fa-solid fa-pen-to-square"></i>
-                <span>정답표 수정</span>
+                <span>문제 및 정답 수정</span>
               </button>
             </td>
           </tr>
@@ -564,7 +564,7 @@ function escapeHtml(str) {
 
 
 
-// ------------------- 관리자 정답표 관리 기능 -------------------
+// ------------------- 관리자 문제 및 정답 편집기 (지문, 선지 추가/삭제, 정답 실시간 동기화) -------------------
 let adminLoadedExams = [];
 let currentEditingAdminExam = null;
 let currentEditingAdminExamId = null;
@@ -598,21 +598,27 @@ async function openAdminAnswerKeyModal(examId) {
     return;
   }
 
-  currentEditingAdminExam = exam;
+  // 1. 로컬스토리지에 저장된 커스텀 exam override가 있다면 완전 복원
+  const savedExamOverride = localStorage.getItem(`custom_exam_override_${examId}`);
+  if (savedExamOverride) {
+    try {
+      exam = JSON.parse(savedExamOverride);
+    } catch (e) {}
+  }
 
-  // 로컬스토리지에 저장된 정답표가 있다면 우선 반영
+  currentEditingAdminExam = JSON.parse(JSON.stringify(exam)); // Deep clone for safe editing
+
+  // 2. 정답표 병합
   const savedLocal = localStorage.getItem(`custom_answer_keys_${examId}`);
-  let mergedKeys = { ...(exam.answer_keys || {}) };
+  let mergedKeys = { ...(currentEditingAdminExam.answer_keys || {}) };
   if (savedLocal) {
     try {
       mergedKeys = { ...mergedKeys, ...JSON.parse(savedLocal) };
     } catch (e) {}
   }
-
   adminEditingAnswerMap = { ...mergedKeys };
 
-  // 각 문항의 answer 속성도 백업으로 반영
-  (exam.questions || []).forEach((q, idx) => {
+  (currentEditingAdminExam.questions || []).forEach((q, idx) => {
     const qNum = String(q.q_number || (idx + 1));
     if (!adminEditingAnswerMap[qNum] && q.answer) {
       adminEditingAnswerMap[qNum] = String(q.answer);
@@ -621,7 +627,7 @@ async function openAdminAnswerKeyModal(examId) {
 
   const titleEl = document.getElementById('adminAkModalTitle');
   if (titleEl) {
-    titleEl.textContent = `[${exam.title || '족보'}] 정답표 수정`;
+    titleEl.textContent = `[${currentEditingAdminExam.title || '족보'}] 문제 및 정답 편집기`;
   }
 
   renderAdminAnswerKeyList();
@@ -645,56 +651,182 @@ function renderAdminAnswerKeyList() {
   container.innerHTML = questions.map((q, idx) => {
     const qNum = String(q.q_number || (idx + 1));
     const currentVal = adminEditingAnswerMap[qNum] || '';
-    const stemSnippet = cleanQuestionStem(q.stem || `문항 ${qNum}`);
-    const shortStem = stemSnippet.length > 75 ? stemSnippet.slice(0, 75) + '...' : stemSnippet;
+    const stem = q.stem || '';
+    const choices = q.choices || [];
+    const isSubjective = choices.length === 0;
 
-    const choicesCount = (q.choices && q.choices.length > 0) ? q.choices.length : 5;
-    const isSubjective = !q.choices || q.choices.length === 0;
-
+    // 동적 선지 선택 버튼들
     let optButtons = [];
-    for (let cIdx = 1; cIdx <= choicesCount; cIdx++) {
+    const count = choices.length > 0 ? choices.length : 5;
+    for (let cIdx = 1; cIdx <= count; cIdx++) {
       const optStr = String(cIdx);
       const optCircle = circleSymbols[cIdx - 1] || `(${cIdx})`;
       const isSelected = String(currentVal) === optStr || String(currentVal) === optCircle;
       const activeClass = isSelected
         ? 'bg-indigo-600 text-white font-bold ring-2 ring-indigo-400 shadow-sm'
         : 'bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-700';
-      optButtons.push(`<button type="button" onclick="quickSetAdminAnswerKey('${qNum}', '${optStr}')" class="min-w-[30px] h-8 px-1.5 rounded-lg text-xs font-semibold transition ${activeClass}">${cIdx}</button>`);
+      optButtons.push(`
+        <button type="button" onclick="quickSetAdminAnswerKey('${qNum}', '${optCircle}')" 
+                class="min-w-[30px] h-7 px-1.5 rounded-lg text-xs font-semibold transition ${activeClass}">
+          ${optCircle}
+        </button>
+      `);
     }
 
     return `
-      <div class="p-4 bg-slate-800/60 rounded-2xl border border-slate-700/80 space-y-3 hover:border-slate-600 transition">
-        <div class="flex items-start justify-between gap-3">
-          <div class="flex items-start gap-2.5 flex-1">
-            <span class="w-6 h-6 rounded-lg bg-indigo-500/20 text-indigo-400 font-bold flex items-center justify-center text-xs shrink-0 mt-0.5 border border-indigo-500/30">
-              ${qNum}
+      <div class="p-5 bg-slate-800/80 rounded-2xl border border-slate-700 space-y-4 hover:border-slate-600 transition shadow-sm">
+        <!-- 문항 상단 헤더 -->
+        <div class="flex items-center justify-between pb-2 border-b border-slate-700/60">
+          <div class="flex items-center gap-2">
+            <span class="w-7 h-7 rounded-lg bg-indigo-600 text-white font-bold flex items-center justify-center text-xs">
+              Q.${qNum}
             </span>
-            <div class="text-xs text-slate-300 leading-relaxed font-medium">
-              ${escapeHtml(shortStem)}
-            </div>
-          </div>
-          <span class="px-2 py-0.5 rounded text-[10px] font-bold ${currentVal ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'}">
-            ${currentVal ? '정답 ' + escapeHtml(currentVal) : '미지정'}
-          </span>
-        </div>
-
-        <div class="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-700/60">
-          <div class="flex items-center gap-1.5 flex-wrap">
-            <span class="text-[11px] text-slate-400 font-medium mr-1">${isSubjective ? '주관식 / 서술형' : `객관식 (${choicesCount}지선다):`}</span>
-            ${!isSubjective ? optButtons.join(' ') : ''}
+            <span class="text-xs font-semibold ${isSubjective ? 'text-amber-400' : 'text-indigo-300'}">
+              ${isSubjective ? '주관식 / 서술형' : `객관식 (${choices.length}지선다)`}
+            </span>
           </div>
           <div class="flex items-center gap-2">
-            <span class="text-[11px] text-slate-400 font-medium">직접 입력:</span>
+            <button type="button" onclick="toggleSubjectiveMode('${qNum}')" 
+                    class="px-2.5 py-1 text-[11px] rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 transition">
+              ${isSubjective ? '<i class="fa-solid fa-list-ol mr-1"></i>객관식으로 전환' : '<i class="fa-solid fa-pen mr-1"></i>주관식으로 전환'}
+            </button>
+            <span class="px-2.5 py-1 rounded-lg text-[11px] font-bold ${currentVal ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'}">
+              ${currentVal ? '정답 ' + escapeHtml(currentVal) : '정답 미지정'}
+            </span>
+          </div>
+        </div>
+
+        <!-- 1. 문제 지문(Stem) 편집 영역 -->
+        <div>
+          <label class="block text-[11px] font-bold text-slate-400 mb-1.5 flex items-center gap-1.5">
+            <i class="fa-solid fa-pencil text-[10px] text-indigo-400"></i>
+            <span>문제 지문 (Stem) 수정:</span>
+          </label>
+          <textarea onchange="updateAdminQuestionStem('${qNum}', this.value)"
+                    placeholder="문제 지문을 입력하세요"
+                    rows="3"
+                    class="w-full px-3 py-2 text-xs bg-slate-900 border border-slate-700 rounded-xl text-white font-medium focus:outline-none focus:border-indigo-500 transition leading-relaxed">${escapeHtml(stem)}</textarea>
+        </div>
+
+        <!-- 2. 보기 / 선지(Choices) 편집 영역 -->
+        ${!isSubjective ? `
+          <div class="space-y-2 pt-1">
+            <div class="flex items-center justify-between">
+              <label class="text-[11px] font-bold text-slate-400 flex items-center gap-1.5">
+                <i class="fa-solid fa-list-check text-[10px] text-indigo-400"></i>
+                <span>보기 / 선지 (Choices) 수정:</span>
+              </label>
+              <button type="button" onclick="addAdminChoice('${qNum}')" 
+                      class="px-2.5 py-1 text-[11px] font-bold text-indigo-400 hover:text-indigo-300 hover:bg-slate-700 rounded-lg transition flex items-center gap-1">
+                <i class="fa-solid fa-plus text-[10px]"></i>
+                <span>선지 추가</span>
+              </button>
+            </div>
+            <div class="space-y-2">
+              ${choices.map((c, cIdx) => {
+                const label = c.label || circleSymbols[cIdx] || `(${cIdx + 1})`;
+                return `
+                  <div class="flex items-center gap-2">
+                    <span class="w-7 h-7 rounded-lg bg-slate-700 text-slate-200 flex items-center justify-center text-xs font-bold shrink-0">
+                      ${label}
+                    </span>
+                    <input type="text"
+                           value="${escapeHtml(c.text || '')}"
+                           onchange="updateAdminChoiceText('${qNum}', ${cIdx}, this.value)"
+                           placeholder="선지 내용 입력"
+                           class="flex-1 px-3 py-1.5 text-xs bg-slate-900 border border-slate-700 rounded-lg text-white font-medium focus:outline-none focus:border-indigo-500 transition" />
+                    <button type="button" 
+                            title="선지 삭제"
+                            onclick="removeAdminChoice('${qNum}', ${cIdx})" 
+                            class="w-7 h-7 flex items-center justify-center text-slate-500 hover:text-rose-400 rounded-lg hover:bg-slate-700 transition">
+                      <i class="fa-solid fa-trash-can text-xs"></i>
+                    </button>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          </div>
+        ` : ''}
+
+        <!-- 3. 정답 지정 바 -->
+        <div class="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-700/60">
+          <div class="flex items-center gap-1.5 flex-wrap">
+            <span class="text-[11px] text-slate-400 font-medium mr-1">정답 원클릭 지정:</span>
+            ${!isSubjective ? optButtons.join(' ') : '<span class="text-xs text-slate-400">주관식 문항은 우측 입력창에 정답을 적어주세요</span>'}
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="text-[11px] text-slate-400 font-medium">정답 직접입력:</span>
             <input type="text" 
                    value="${escapeHtml(currentVal)}" 
-                   placeholder="예: 3 또는 4,5"
-                   oninput="updateAdminAnswerKeyText('${qNum}', this.value)"
-                   class="w-28 px-2.5 py-1 text-xs bg-slate-900 border border-slate-600 rounded-lg text-white font-bold text-center focus:outline-none focus:border-indigo-500 transition" />
+                   placeholder="예: ③ 또는 3,4"
+                   onchange="updateAdminAnswerKeyText('${qNum}', this.value)"
+                   class="w-32 px-2.5 py-1 text-xs bg-slate-900 border border-slate-600 rounded-lg text-white font-bold text-center focus:outline-none focus:border-indigo-500 transition" />
           </div>
         </div>
       </div>
     `;
   }).join('');
+}
+
+function updateAdminQuestionStem(qNum, newStem) {
+  if (!currentEditingAdminExam) return;
+  const q = (currentEditingAdminExam.questions || []).find(x => String(x.q_number) === String(qNum));
+  if (q) {
+    q.stem = newStem.trim();
+  }
+}
+
+function updateAdminChoiceText(qNum, cIdx, newText) {
+  if (!currentEditingAdminExam) return;
+  const q = (currentEditingAdminExam.questions || []).find(x => String(x.q_number) === String(qNum));
+  if (q && q.choices && q.choices[cIdx]) {
+    q.choices[cIdx].text = newText.trim();
+  }
+}
+
+function addAdminChoice(qNum) {
+  if (!currentEditingAdminExam) return;
+  const circleSymbols = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩'];
+  const q = (currentEditingAdminExam.questions || []).find(x => String(x.q_number) === String(qNum));
+  if (q) {
+    if (!q.choices) q.choices = [];
+    const nextIdx = q.choices.length;
+    q.choices.push({
+      label: circleSymbols[nextIdx] || `(${nextIdx + 1})`,
+      text: ''
+    });
+    renderAdminAnswerKeyList();
+  }
+}
+
+function removeAdminChoice(qNum, cIdx) {
+  if (!currentEditingAdminExam) return;
+  const circleSymbols = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩'];
+  const q = (currentEditingAdminExam.questions || []).find(x => String(x.q_number) === String(qNum));
+  if (q && q.choices) {
+    q.choices.splice(cIdx, 1);
+    // 재라벨링
+    q.choices.forEach((c, idx) => {
+      c.label = circleSymbols[idx] || `(${idx + 1})`;
+    });
+    renderAdminAnswerKeyList();
+  }
+}
+
+function toggleSubjectiveMode(qNum) {
+  if (!currentEditingAdminExam) return;
+  const q = (currentEditingAdminExam.questions || []).find(x => String(x.q_number) === String(qNum));
+  if (q) {
+    if (!q.choices || q.choices.length === 0) {
+      // 객관식으로 전환: 5개 기본 생성
+      const circleSymbols = ['①', '②', '③', '④', '⑤'];
+      q.choices = circleSymbols.map((s, i) => ({ label: s, text: '' }));
+    } else {
+      // 주관식으로 전환: 선지 비우기
+      q.choices = [];
+    }
+    renderAdminAnswerKeyList();
+  }
 }
 
 function quickSetAdminAnswerKey(qNum, opt) {
@@ -713,6 +845,7 @@ function updateAdminAnswerKeyText(qNum, val) {
   } else {
     delete adminEditingAnswerMap[qNum];
   }
+  renderAdminAnswerKeyList();
 }
 
 function closeAdminAnswerKeyModal() {
@@ -720,16 +853,14 @@ function closeAdminAnswerKeyModal() {
   if (modal) modal.classList.add('hidden');
 }
 
-async function saveAdminAnswerKey() {
+async function saveAdminExamEdits() {
   if (!currentEditingAdminExam || !currentEditingAdminExamId) {
     alert('선택된 족보 세트가 없습니다.');
     return;
   }
 
-  // 1. 객체 내 answer_keys 업데이트
+  // 1. answer_keys 및 q.answer 업데이트
   currentEditingAdminExam.answer_keys = { ...adminEditingAnswerMap };
-
-  // 각 질문의 answer 속성도 업데이트
   if (Array.isArray(currentEditingAdminExam.questions)) {
     currentEditingAdminExam.questions.forEach((q, idx) => {
       const qNum = String(q.q_number || (idx + 1));
@@ -739,32 +870,42 @@ async function saveAdminAnswerKey() {
     });
   }
 
-  // 2. localStorage에 영구 보존
+  // 2. localStorage에 영구 보존 (같은 도메인의 이용자 포털과 즉시 공유!)
+  localStorage.setItem(`custom_exam_override_${currentEditingAdminExamId}`, JSON.stringify(currentEditingAdminExam));
   localStorage.setItem(`custom_answer_keys_${currentEditingAdminExamId}`, JSON.stringify(adminEditingAnswerMap));
 
   // 3. 전체 adminLoadedExams 캐시 저장
   try {
+    const idx = adminLoadedExams.findIndex(e => e.id === currentEditingAdminExamId);
+    if (idx !== -1) {
+      adminLoadedExams[idx] = currentEditingAdminExam;
+    } else {
+      adminLoadedExams.push(currentEditingAdminExam);
+    }
     localStorage.setItem('cached_exams_json', JSON.stringify(adminLoadedExams));
   } catch (e) {}
 
   // 4. Supabase DB 연결되어 있을 경우 동기화 시도
   if (typeof supabaseClient !== 'undefined' && supabaseClient) {
     try {
-      await supabaseClient.from('exam_answer_keys').upsert({
+      await supabaseClient.from('exam_overrides').upsert({
         exam_id: currentEditingAdminExamId,
-        keys: adminEditingAnswerMap,
+        exam_data: currentEditingAdminExam,
         updated_at: new Date().toISOString()
       });
     } catch (e) {
-      console.warn('Supabase answer key sync skipped:', e);
+      console.warn('Supabase sync skipped:', e);
     }
   }
 
-  alert(`[${currentEditingAdminExam.title || '족보'}] 정답표가 브라우저에 저장되었습니다!\n\n학생용 사이트에도 영구 배포하려면 모달 좌측 하단의 [수정된 exams.json 다운로드]를 눌러 리포지터리의 data/exams.json에 커밋하세요.`);
+  alert(`[${currentEditingAdminExam.title || '족보'}] 문제 지문, 보기 선지 및 정답이 성공적으로 저장되었습니다!\n\n이용자(학생) 포털에서도 즉시 수정된 내용이 반영됩니다.`);
 
   closeAdminAnswerKeyModal();
   loadSubjects();
 }
+
+// 하위 호환성 유지용 alias
+const saveAdminAnswerKey = saveAdminExamEdits;
 
 function downloadCleanedExamsJson() {
   if (!adminLoadedExams || adminLoadedExams.length === 0) {
@@ -772,7 +913,6 @@ function downloadCleanedExamsJson() {
     return;
   }
 
-  // 현재 편집 중인 사항 반영 확인
   if (currentEditingAdminExam && currentEditingAdminExamId) {
     currentEditingAdminExam.answer_keys = { ...adminEditingAnswerMap };
     if (Array.isArray(currentEditingAdminExam.questions)) {
@@ -783,6 +923,8 @@ function downloadCleanedExamsJson() {
         }
       });
     }
+    const idx = adminLoadedExams.findIndex(e => e.id === currentEditingAdminExamId);
+    if (idx !== -1) adminLoadedExams[idx] = currentEditingAdminExam;
   }
 
   const jsonStr = JSON.stringify(adminLoadedExams, null, 2);
