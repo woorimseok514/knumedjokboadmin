@@ -395,31 +395,92 @@ async function deleteUser(userId) {
   }
 }
 
-// ------------------- 과목 관리 -------------------
+// ------------------- 과목 및 자료/족보 관리 -------------------
 
 async function loadSubjects() {
   try {
     let subs = await fetchJsonWithFallback('/api/subjects', './data/subjects.json');
-    if (!subs) subs = [];
+    let docs = await fetchJsonWithFallback('/api/lectures', './data/lectures.json') || [];
+    let exams = await fetchJsonWithFallback('/api/exams', './data/exams.json') || [];
 
-    const body = document.getElementById('adminSubjectsBody');
-    if (subs.length === 0) {
-      body.innerHTML = `<tr><td colspan="4" class="px-6 py-6 text-center text-slate-500 text-xs">등록된 과목이 없습니다.</td></tr>`;
-      return;
+    if (!subs || subs.length === 0) {
+      subs = [{
+        id: "sub_fbdc79d0",
+        name: "의학세포분자생물학",
+        description: "2026년 예과 1학년 2학기",
+        created_at: "2026-10-10 01:31"
+      }];
     }
 
-    body.innerHTML = subs.map(s => `
-      <tr class="hover:bg-slate-800/50">
-        <td class="px-6 py-3.5 font-bold text-white">${escapeHtml(s.name)}</td>
-        <td class="px-6 py-3.5 text-xs text-slate-300">${escapeHtml(s.description || '-')}</td>
-        <td class="px-6 py-3.5 text-xs text-indigo-400 font-semibold">
-          강의자료 ${s.lecture_count || 0}개 | 족보 ${s.exam_count || 0}개
-        </td>
-        <td class="px-6 py-3.5 text-right text-xs text-slate-500">
-          기본 과목
-        </td>
-      </tr>
-    `).join('');
+    const body = document.getElementById('adminSubjectsBody') || document.getElementById('subjectsBody');
+    if (body) {
+      body.innerHTML = subs.map(s => `
+        <tr class="hover:bg-slate-800/50">
+          <td class="px-6 py-3.5 font-bold text-white">${escapeHtml(s.name)}</td>
+          <td class="px-6 py-3.5 text-xs text-slate-300">${escapeHtml(s.description || '-')}</td>
+          <td class="px-6 py-3.5 text-xs text-indigo-400 font-semibold">
+            강의자료 ${docs.length || s.lecture_count || 0}개
+          </td>
+          <td class="px-6 py-3.5 text-xs text-cyan-400 font-semibold">
+            족보 ${exams.length || s.exam_count || 0}세트
+          </td>
+          <td class="px-6 py-3.5 text-right text-xs text-slate-500">
+            기본 과목
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    // 1. 등록된 강의 자료 목록 렌더링
+    const lecBody = document.getElementById('adminLecturesBody');
+    const lecCountText = document.getElementById('adminLecturesCountText');
+    if (lecCountText) lecCountText.textContent = `총 ${docs.length}개 강의 문서`;
+    if (lecBody) {
+      if (docs.length === 0) {
+        lecBody.innerHTML = `<tr><td colspan="4" class="px-6 py-6 text-center text-slate-500 text-xs">등록된 강의 자료가 없습니다.</td></tr>`;
+      } else {
+        lecBody.innerHTML = docs.map(d => `
+          <tr class="hover:bg-slate-800/50 transition">
+            <td class="px-6 py-3.5 font-medium text-white flex items-center gap-2">
+              <i class="fa-regular fa-file-powerpoint text-indigo-400"></i>
+              <span>${escapeHtml(d.filename)}</span>
+            </td>
+            <td class="px-6 py-3.5">
+              <span class="px-2 py-0.5 text-xs font-semibold rounded bg-slate-700 text-slate-300">${escapeHtml(d.unit_type || '슬라이드')}</span>
+            </td>
+            <td class="px-6 py-3.5 font-semibold text-slate-300 text-xs">${d.unit_count || (d.units ? d.units.length : 0)}개</td>
+            <td class="px-6 py-3.5 text-xs text-slate-400">${escapeHtml(d.uploaded_by || '관리자')} (${d.uploaded_at || '-'})</td>
+          </tr>
+        `).join('');
+      }
+    }
+
+    // 2. 등록된 족보 세트 목록 렌더링
+    const exBody = document.getElementById('adminExamsBody');
+    const exCountText = document.getElementById('adminExamsCountText');
+    if (exCountText) exCountText.textContent = `총 ${exams.length}개 족보 세트`;
+    if (exBody) {
+      if (exams.length === 0) {
+        exBody.innerHTML = `<tr><td colspan="4" class="px-6 py-6 text-center text-slate-500 text-xs">등록된 족보 세트가 없습니다.</td></tr>`;
+      } else {
+        exBody.innerHTML = exams.map(e => `
+          <tr class="hover:bg-slate-800/50 transition">
+            <td class="px-6 py-3.5 font-semibold text-white flex items-center gap-2">
+              <i class="fa-solid fa-file-signature text-cyan-400"></i>
+              <span>${escapeHtml(e.title)}</span>
+            </td>
+            <td class="px-6 py-3.5 font-bold text-xs text-indigo-300">
+              ${e.question_count || (e.questions ? e.questions.length : 0)}문항
+            </td>
+            <td class="px-6 py-3.5 text-xs text-emerald-400 font-semibold">
+              <i class="fa-solid fa-check-circle"></i> 정답표 등록 완료
+            </td>
+            <td class="px-6 py-3.5 text-xs text-slate-400">${escapeHtml(e.created_by || '관리자')} (${e.created_at || '-'})</td>
+          </tr>
+        `).join('');
+      }
+    }
+
   } catch (err) {
     console.error('Subjects load error:', err);
   }
@@ -471,6 +532,14 @@ async function fetchJsonWithFallback(apiPath, staticJsonPath) {
     const alt = staticJsonPath.startsWith('./') ? `.${staticJsonPath}` : `../${staticJsonPath}`;
     const res = await fetch(alt);
     if (res.ok) return await res.json();
+  } catch (e) {}
+
+  // 3차 fallback: 원격 학생용 배포 사이트의 data 폴더에서 직접 연동 (CORS 지원)
+  try {
+    const filename = staticJsonPath.split('/').pop();
+    const liveUrl = `https://woorimseok514.github.io/knumedjokbo/data/${filename}`;
+    const resLive = await fetch(liveUrl);
+    if (resLive.ok) return await resLive.json();
   } catch (e) {}
 
   return null;

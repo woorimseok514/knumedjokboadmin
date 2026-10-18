@@ -214,8 +214,10 @@
 
     </div>
 
-    <!-- 2. 과목 관리 탭 -->
+    <!-- 2. 과목 및 자료/족보 관리 탭 -->
     <div id="apanel-subjects" class="hidden space-y-6">
+      
+      <!-- 등록된 과목 목록 -->
       <div class="bg-slate-800/90 border border-slate-700 rounded-2xl overflow-hidden shadow-lg">
         <div class="px-6 py-4 bg-slate-850 border-b border-slate-700 flex justify-between items-center">
           <div>
@@ -242,11 +244,71 @@
                 <th class="px-6 py-3 text-right">작업</th>
               </tr>
             </thead>
-            <tbody id="subjectsBody" class="divide-y divide-slate-700/60">
+            <tbody id="adminSubjectsBody" class="divide-y divide-slate-700/60">
+              <tr><td colspan="5" class="px-6 py-6 text-center text-slate-500 text-xs">불러오는 중...</td></tr>
             </tbody>
           </table>
         </div>
       </div>
+
+      <!-- 등록된 강의 자료 목록 -->
+      <div class="bg-slate-800/90 border border-slate-700 rounded-2xl overflow-hidden shadow-lg">
+        <div class="px-6 py-4 bg-slate-850 border-b border-slate-700 flex justify-between items-center">
+          <div>
+            <h3 class="text-sm font-bold text-white flex items-center gap-2">
+              <i class="fa-regular fa-file-powerpoint text-indigo-400"></i>
+              등록된 강의 슬라이드/문서 목록
+            </h3>
+            <p class="text-xs text-slate-400" id="adminLecturesCountText">총 0개 강의 문서</p>
+          </div>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-sm text-slate-300">
+            <thead class="bg-slate-900/50 text-slate-400 text-xs font-semibold uppercase">
+              <tr>
+                <th class="px-6 py-3">문서 파일명</th>
+                <th class="px-6 py-3">구분</th>
+                <th class="px-6 py-3">슬라이드/페이지 수</th>
+                <th class="px-6 py-3">등록자 / 등록일시</th>
+              </tr>
+            </thead>
+            <tbody id="adminLecturesBody" class="divide-y divide-slate-700/60">
+              <tr><td colspan="4" class="px-6 py-6 text-center text-slate-500 text-xs">강의 자료를 불러오는 중...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- 등록된 족보 세트 목록 -->
+      <div class="bg-slate-800/90 border border-slate-700 rounded-2xl overflow-hidden shadow-lg">
+        <div class="px-6 py-4 bg-slate-850 border-b border-slate-700 flex justify-between items-center">
+          <div>
+            <h3 class="text-sm font-bold text-white flex items-center gap-2">
+              <i class="fa-solid fa-book-open text-cyan-400"></i>
+              등록된 기출 족보 문항 세트 목록
+            </h3>
+            <p class="text-xs text-slate-400" id="adminExamsCountText">총 0개 족보 세트</p>
+          </div>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-sm text-slate-300">
+            <thead class="bg-slate-900/50 text-slate-400 text-xs font-semibold uppercase">
+              <tr>
+                <th class="px-6 py-3">족보 세트명</th>
+                <th class="px-6 py-3">문항 수</th>
+                <th class="px-6 py-3">정답표 상태</th>
+                <th class="px-6 py-3">등록자 / 등록일시</th>
+              </tr>
+            </thead>
+            <tbody id="adminExamsBody" class="divide-y divide-slate-700/60">
+              <tr><td colspan="4" class="px-6 py-6 text-center text-slate-500 text-xs">족보 세트를 불러오는 중...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
     </div>
 
     <!-- 3. 관리자 보안 설정 탭 -->
