@@ -300,10 +300,11 @@
                 <th class="px-6 py-3">문항 수</th>
                 <th class="px-6 py-3">정답표 상태</th>
                 <th class="px-6 py-3">등록자 / 등록일시</th>
+                <th class="px-6 py-3 text-right">정답표 관리</th>
               </tr>
             </thead>
             <tbody id="adminExamsBody" class="divide-y divide-slate-700/60">
-              <tr><td colspan="4" class="px-6 py-6 text-center text-slate-500 text-xs">족보 세트를 불러오는 중...</td></tr>
+              <tr><td colspan="5" class="px-6 py-6 text-center text-slate-500 text-xs">족보 세트를 불러오는 중...</td></tr>
             </tbody>
           </table>
         </div>
@@ -398,6 +399,50 @@
           <button type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold rounded-lg text-white">과목 개설</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- 정답표 수정 관리자 모달 -->
+  <div id="adminAnswerKeyModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-slate-900 rounded-3xl shadow-2xl max-w-2xl w-full max-h-[85vh] flex flex-col border border-slate-700 overflow-hidden">
+      
+      <!-- 헤더 -->
+      <div class="p-5 bg-slate-800/90 border-b border-slate-700 flex justify-between items-center">
+        <div class="flex items-center gap-3">
+          <div class="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-bold">
+            <i class="fa-solid fa-key text-sm"></i>
+          </div>
+          <div>
+            <h3 id="adminAkModalTitle" class="font-bold text-white text-base">족보 정답표 설정</h3>
+            <p class="text-xs text-slate-400">객관식 번호 클릭 또는 복수정답/단답형 텍스트를 직접 수정합니다.</p>
+          </div>
+        </div>
+        <button onclick="closeAdminAnswerKeyModal()" class="text-slate-400 hover:text-white p-2 rounded-lg hover:bg-slate-700 transition">
+          <i class="fa-solid fa-xmark text-lg"></i>
+        </button>
+      </div>
+
+      <!-- 문항별 정답 설정 목록 -->
+      <div class="p-6 overflow-y-auto flex-1 space-y-4" id="adminAkQuestionsList">
+      </div>
+
+      <!-- 푸터 -->
+      <div class="p-4 bg-slate-800/90 border-t border-slate-700 flex flex-wrap justify-between items-center gap-2">
+        <button type="button" onclick="downloadCleanedExamsJson()" class="px-3.5 py-2 bg-slate-700 hover:bg-slate-600 text-slate-300 text-xs font-semibold rounded-xl flex items-center gap-1.5 transition">
+          <i class="fa-solid fa-download text-xs"></i>
+          <span>수정된 exams.json 다운로드</span>
+        </button>
+        <div class="flex gap-2">
+          <button type="button" onclick="closeAdminAnswerKeyModal()" class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white text-xs font-semibold rounded-xl transition">
+            닫기
+          </button>
+          <button type="button" onclick="saveAdminAnswerKey()" class="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-indigo-600/30 transition flex items-center gap-1.5">
+            <i class="fa-solid fa-check"></i>
+            <span>정답표 저장</span>
+          </button>
+        </div>
+      </div>
+
     </div>
   </div>
 

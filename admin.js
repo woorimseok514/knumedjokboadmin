@@ -402,6 +402,7 @@ async function loadSubjects() {
     let subs = await fetchJsonWithFallback('/api/subjects', './data/subjects.json');
     let docs = await fetchJsonWithFallback('/api/lectures', './data/lectures.json') || [];
     let exams = await fetchJsonWithFallback('/api/exams', './data/exams.json') || [];
+    adminLoadedExams = exams;
 
     if (!subs || subs.length === 0) {
       subs = [{
@@ -461,7 +462,7 @@ async function loadSubjects() {
     if (exCountText) exCountText.textContent = `총 ${exams.length}개 족보 세트`;
     if (exBody) {
       if (exams.length === 0) {
-        exBody.innerHTML = `<tr><td colspan="4" class="px-6 py-6 text-center text-slate-500 text-xs">등록된 족보 세트가 없습니다.</td></tr>`;
+        exBody.innerHTML = `<tr><td colspan="5" class="px-6 py-6 text-center text-slate-500 text-xs">등록된 족보 세트가 없습니다.</td></tr>`;
       } else {
         exBody.innerHTML = exams.map(e => `
           <tr class="hover:bg-slate-800/50 transition">
@@ -475,7 +476,13 @@ async function loadSubjects() {
             <td class="px-6 py-3.5 text-xs text-emerald-400 font-semibold">
               <i class="fa-solid fa-check-circle"></i> 정답표 등록 완료
             </td>
-            <td class="px-6 py-3.5 text-xs text-slate-400">${escapeHtml(e.created_by || '관리자')} (${e.created_at || '-'})</td>
+                        <td class="px-6 py-3.5 text-xs text-slate-400">${escapeHtml(e.created_by || '관리자')} (${e.created_at || '-'})</td>
+            <td class="px-6 py-3.5 text-right">
+              <button onclick="openAdminAnswerKeyModal('${e.id}')" class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold shadow transition inline-flex items-center gap-1.5">
+                <i class="fa-solid fa-pen-to-square"></i>
+                <span>정답표 수정</span>
+              </button>
+            </td>
           </tr>
         `).join('');
       }
